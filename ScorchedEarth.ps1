@@ -23,6 +23,7 @@
     - Narrow spawn platforms
     - Normal projectile
     - MIRV projectile that splits mid-air
+    - Triangle projectile symbols with dotted trails for Normal and MIRV fire
     - Projectile can leave the top of the screen and come back down
     - Side exits count as misses
     - 3x3 explosion hit detection
@@ -31,7 +32,7 @@
     - Animated DIRECT HIT message
     - Winner animation
     - Replay prompt after win/draw
-    - Five shots per weapon per player
+    - Five Normal shots and five MIRV shots per player
 
 .NOTES
     Recommended hosts:
@@ -65,6 +66,8 @@
     v1.8 - Added winner animation.
     v1.9 - Added working terrain selection: Mountains, Cityscape, and Random.
            Cityscape now spawns players outside buildings at street level, because rooftops are for antennas, not infantry.
+    v2.0 - Removed Fire and kept the arsenal focused on Normal and MIRV shots.
+           Triangle projectiles and dotted trails remain for Normal and MIRV fire.
 #>
 
 Clear-Host
@@ -203,15 +206,15 @@ function Show-SplashScreen {
     Write-CenteredText -Text "Weapons:" -Y 9
     Write-CenteredText -Text "1 = Normal Shot" -Y 10
     Write-CenteredText -Text "2 = MIRV Shot" -Y 11
-    Write-CenteredText -Text "Rules:" -Y 13
-    Write-CenteredText -Text "A player is hit if inside the 3x3 explosion area." -Y 14
-    Write-CenteredText -Text "Direct hit gets a special animated message." -Y 15
-    Write-CenteredText -Text "Player hit triggers a second 5x5 explosion." -Y 16
-    Write-CenteredText -Text "Each player has 5 Normal shots and 5 MIRV shots." -Y 17
-    Write-CenteredText -Text "Terrain can be damaged. Because of course it can." -Y 18
-    Write-CenteredText -Text "============================================================" -Y 20
+    Write-CenteredText -Text "Rules:" -Y 14
+    Write-CenteredText -Text "A player is hit if inside the 3x3 explosion area." -Y 15
+    Write-CenteredText -Text "Direct hit gets a special animated message." -Y 16
+    Write-CenteredText -Text "Player hit triggers a second 5x5 explosion." -Y 17
+    Write-CenteredText -Text "Each player has 5 Normal shots and 5 MIRV shots." -Y 18
+    Write-CenteredText -Text "Terrain can be damaged. Because of course it can." -Y 20
+    Write-CenteredText -Text "============================================================" -Y 21
 
-    Safe-SetCursor -X 24 -Y 22
+    Safe-SetCursor -X 24 -Y 23
     Read-Host "Press ENTER to start"
 }
 
@@ -605,6 +608,14 @@ function Start-ScorchedEarthGame {
         <#
         .SYNOPSIS
             Redraws the centered battlefield.
+
+        .DESCRIPTION
+            Supports two kinds of animation overlays:
+            - Triangle projectile symbols such as ▲ or ▴
+            - Dotted trail marks using .
+
+            If a projectile and a trail land on the same cell, the projectile wins. The dot may be
+            dramatic, but the triangle is the thing ruining someone's afternoon.
         #>
         param (
             [array]$Projectiles = @()
@@ -614,17 +625,32 @@ function Start-ScorchedEarthGame {
             $line = ""
 
             for ($x = 0; $x -lt $script:width; $x++) {
-                $hasProjectile = $false
+                $overlayChar = $null
+                $trailChar = $null
 
                 foreach ($p in $Projectiles) {
                     if ([int][Math]::Round($p.X) -eq $x -and [int][Math]::Round($p.Y) -eq $y) {
-                        $hasProjectile = $true
-                        break
+                        $char = "▲"
+
+                        if ($p.ContainsKey("Char")) {
+                            $char = [string]$p.Char
+                        }
+
+                        if ($char -eq ".") {
+                            $trailChar = "."
+                        }
+                        else {
+                            $overlayChar = $char
+                            break
+                        }
                     }
                 }
 
-                if ($hasProjectile) {
-                    $line += "*"
+                if ($null -ne $overlayChar) {
+                    $line += $overlayChar
+                }
+                elseif ($null -ne $trailChar) {
+                    $line += $trailChar
                 }
                 else {
                     $line += Get-CellChar -X $x -Y $y
@@ -793,7 +819,6 @@ function Start-ScorchedEarthGame {
         Update-PlayerHeights
         Draw-Game
     }
-
     function Handle-PlayerHit {
         <#
         .SYNOPSIS
@@ -891,6 +916,7 @@ function Start-ScorchedEarthGame {
         $y = [double]$Shooter.Y
         $gravity = 0.28
         $timeStep = 0.35
+        $trail = @()
 
         while ($true) {
             $drawX = [int][Math]::Round($x)
@@ -922,7 +948,18 @@ function Start-ScorchedEarthGame {
                 return $false
             }
 
-            Draw-Game -Projectiles @(@{ X = $x; Y = $y })
+            if ($drawY -ge 0 -and $drawY -lt $script:height) {
+                $trail += @{ X = $drawX; Y = $drawY; Char = "." }
+
+                if ($trail.Count -gt 18) {
+                    $trail = @($trail | Select-Object -Last 18)
+                }
+            }
+
+            $overlay = @()
+            $overlay += $trail
+            $overlay += @{ X = $x; Y = $y; Char = "▲" }
+            Draw-Game -Projectiles $overlay
             Start-Sleep -Milliseconds 0
 
             $x += $velocityX * $timeStep
@@ -946,6 +983,7 @@ function Start-ScorchedEarthGame {
         $timeStep = 0.30
         $splitFrame = 12
         $frame = 0
+        $trail = @()
 
         while ($frame -lt $splitFrame) {
             $drawX = [int][Math]::Round($x)
@@ -977,7 +1015,18 @@ function Start-ScorchedEarthGame {
                 return $false
             }
 
-            Draw-Game -Projectiles @(@{ X = $x; Y = $y })
+            if ($drawY -ge 0 -and $drawY -lt $script:height) {
+                $trail += @{ X = $drawX; Y = $drawY; Char = "." }
+
+                if ($trail.Count -gt 18) {
+                    $trail = @($trail | Select-Object -Last 18)
+                }
+            }
+
+            $overlay = @()
+            $overlay += $trail
+            $overlay += @{ X = $x; Y = $y; Char = "▲" }
+            Draw-Game -Projectiles $overlay
             Start-Sleep -Milliseconds 0
 
             $x += $velocityX * $timeStep
@@ -989,17 +1038,21 @@ function Start-ScorchedEarthGame {
         $direction = if ($Shooter.X -gt $Target.X) { -1 } else { 1 }
 
         $projectiles = @(
-            @{ X = $x; Y = $y; VX = $velocityX + (-4 * $direction); VY = $velocityY + 1.5; Active = $true },
-            @{ X = $x; Y = $y; VX = $velocityX + (-2 * $direction); VY = $velocityY + 1.0; Active = $true },
-            @{ X = $x; Y = $y; VX = $velocityX;                    VY = $velocityY + 0.5; Active = $true },
-            @{ X = $x; Y = $y; VX = $velocityX + ( 2 * $direction); VY = $velocityY + 1.0; Active = $true },
-            @{ X = $x; Y = $y; VX = $velocityX + ( 4 * $direction); VY = $velocityY + 1.5; Active = $true }
+            @{ X = $x; Y = $y; VX = $velocityX + (-4 * $direction); VY = $velocityY + 1.5; Active = $true; Trail = @() },
+            @{ X = $x; Y = $y; VX = $velocityX + (-2 * $direction); VY = $velocityY + 1.0; Active = $true; Trail = @() },
+            @{ X = $x; Y = $y; VX = $velocityX;                    VY = $velocityY + 0.5; Active = $true; Trail = @() },
+            @{ X = $x; Y = $y; VX = $velocityX + ( 2 * $direction); VY = $velocityY + 1.0; Active = $true; Trail = @() },
+            @{ X = $x; Y = $y; VX = $velocityX + ( 4 * $direction); VY = $velocityY + 1.5; Active = $true; Trail = @() }
         )
 
         while (($projectiles | Where-Object { $_.Active }).Count -gt 0) {
             $activeProjectiles = @()
 
             foreach ($p in $projectiles) {
+                foreach ($trailDot in $p.Trail) {
+                    $activeProjectiles += @{ X = $trailDot.X; Y = $trailDot.Y; Char = "." }
+                }
+
                 if (-not $p.Active) { continue }
 
                 $drawX = [int][Math]::Round($p.X)
@@ -1028,7 +1081,15 @@ function Start-ScorchedEarthGame {
                     continue
                 }
 
-                $activeProjectiles += $p
+                if ($drawY -ge 0 -and $drawY -lt $script:height) {
+                    $p.Trail += @{ X = $drawX; Y = $drawY }
+
+                    if ($p.Trail.Count -gt 14) {
+                        $p.Trail = @($p.Trail | Select-Object -Last 14)
+                    }
+                }
+
+                $activeProjectiles += @{ X = $p.X; Y = $p.Y; Char = "▲" }
             }
 
             Draw-Game -Projectiles $activeProjectiles
@@ -1047,7 +1108,6 @@ function Start-ScorchedEarthGame {
         Start-Sleep -Milliseconds 150
         return $false
     }
-
     function Fire-Shot {
         param ($Shooter, $Target)
 
@@ -1067,7 +1127,6 @@ function Start-ScorchedEarthGame {
         $power = [double](Read-Host "$($Shooter.Name) Power (1-100)")
 
         Clear-StatusArea
-
         if ($weapon -eq "2") {
             if ($Shooter.MirvShots -le 0) {
                 Write-CenteredText -Text "$($Shooter.Name) has no MIRV shots left." -Y ($script:height + 5)
@@ -1142,7 +1201,7 @@ function Start-ScorchedEarthGame {
         Draw-Game
         Clear-StatusArea
         Write-CenteredText -Text "DRAW!" -Y ($script:height + 2)
-        Write-CenteredText -Text "Both players ran out of ammunition for all weapons." -Y ($script:height + 3)
+        Write-CenteredText -Text "Both players ran out of Normal and MIRV ammunition." -Y ($script:height + 3)
     }
 
     Safe-SetCursor -X 0 -Y ($script:height + 8)
